@@ -1,0 +1,122 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Just Build</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    body {
+      background: #0f0f0f;
+      color: #f8f8f8;
+      font-family: 'Courier New', Courier, monospace;
+      padding: 2rem;
+      text-align: center;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      background: linear-gradient(90deg, #00ffd5, #00bfff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    input {
+      width: 60%;
+      padding: 0.8rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      margin-bottom: 1rem;
+      background: #1e1e1e;
+      color: #fff;
+    }
+    button {
+      padding: 0.8rem 2rem;
+      font-size: 1rem;
+      background: #00bfff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0088cc;
+    }
+    #log {
+      text-align: left;
+      margin-top: 2rem;
+      background: #1f1f1f;
+      padding: 1rem;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>Just Build</h1>
+  <p>Enter GitHub repo or ZIP URL and subfolder path:</p>
+  <input id="repoInput" placeholder="https://github.com/user/repo [or ZIP]">
+  <br>
+  <input id="folder" placeholder="Subfolder path (e.g. img)">
+  <br>
+  <button onclick="extractSubdir()">Extract Folder ZIP</button>
+  <pre id="log"></pre>  <script>
+    const log = (msg) => {
+      document.getElementById('log').textContent += msg + '\n';
+    };
+
+    function toCodeload(url) {
+      const match = url.match(/github\.com\/(.+?)\/(.+?)(?:\/|$)/);
+      const branch = url.includes('/tree/') ? url.split('/tree/')[1].split('/')[0] : 'main';
+      return match ? `https://codeload.github.com/${match[1]}/${match[2]}/zip/${branch}` : url;
+    }
+
+    async function extractSubdir() {
+      const input = document.getElementById('repoInput').value.trim();
+      const subfolder = document.getElementById('folder').value.trim().replace(/\/$/, '');
+      const logElem = document.getElementById('log');
+      logElem.textContent = '';
+
+      try {
+        const zipUrl = toCodeload(input);
+        log(`📦 Downloading ZIP from: ${zipUrl}`);
+        const res = await fetch(zipUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+
+        log(`🔍 Reading ZIP...`);
+        const zip = await JSZip.loadAsync(blob);
+
+        const newZip = new JSZip();
+        const entries = Object.keys(zip.files);
+        let matched = 0;
+
+        for (const path of entries) {
+          const zipPath = path.replace(/^.*?\//, ''); // Strip top-level folder
+          if (zipPath.startsWith(subfolder + '/')) {
+            const file = zip.files[path];
+            if (!file.dir) {
+              const content = await file.async('blob');
+              newZip.file(zipPath.substring(subfolder.length + 1), content);
+              log(`✔ ${zipPath}`);
+              matched++;
+            }
+          }
+        }
+
+        if (matched === 0) return log('⚠️ No files matched that subfolder path.');
+
+        log('📦 Building ZIP...');
+        const outBlob = await newZip.generateAsync({ type: 'blob' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(outBlob);
+        link.download = `${subfolder.replaceAll('/', '_')}.zip`;
+        link.click();
+        log('✅ Download ready!');
+      } catch (e) {
+        log(`❌ Error: ${e.message}`);
+      }
+    }
+  </script></body>
+</html>
